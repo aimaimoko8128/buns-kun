@@ -60,6 +60,10 @@ namespace BunsKun.Player
 
         private void Update()
         {
+            // Frozen while a menu/upgrade/end screen has paused the game, so a UI button
+            // click underneath the cursor can never also register as a combat click.
+            if (Time.timeScale <= 0f) return;
+
             if (DelayTimer > 0f) DelayTimer -= Time.deltaTime;
 
             float before = CurrentMana;
