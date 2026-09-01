@@ -56,6 +56,10 @@ namespace BunsKun.ProceduralGeneration
             SpawnPickups(plan, built);
             SpawnHazards(plan, built);
 
+            // Anything that demanded clearing but received no enemies opens immediately,
+            // so a room can never lock the player in.
+            foreach (var room in built.Rooms.Values) room.FinalizeSpawning();
+
             built.SpawnPosition = plan.Tiles.StandPositionToWorld(plan.SpawnTile, PlayerBodyHalfHeight);
             built.GoalPosition = plan.Tiles.StandPositionToWorld(plan.GoalTile, PlayerBodyHalfHeight);
             built.GoalRoom = built.Rooms[plan.GoalRoom];

@@ -37,6 +37,23 @@ namespace BunsKun.Rooms
             lockBarriers.Add(barrier);
         }
 
+        /// <summary>
+        /// Called once the layer has finished spawning. A room that demands clearing but
+        /// ended up with no enemies would keep its exits locked forever, so it is opened
+        /// straight away - quietly, without paying out a room-clear reward.
+        /// </summary>
+        public void FinalizeSpawning()
+        {
+            if (!RequiresClear || Cleared || aliveEnemies.Count > 0) return;
+
+            Cleared = true;
+            foreach (var barrier in lockBarriers)
+            {
+                if (barrier != null) Destroy(barrier);
+            }
+            lockBarriers.Clear();
+        }
+
         public void RegisterEnemy(EnemyController enemy)
         {
             aliveEnemies.Add(enemy);
