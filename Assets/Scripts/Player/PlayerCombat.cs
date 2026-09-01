@@ -44,6 +44,12 @@ namespace BunsKun.Player
             CurrentMana = stats.MaxMana;
         }
 
+        public void ClampManaToMax()
+        {
+            CurrentMana = Mathf.Min(CurrentMana, stats.MaxMana);
+            OnManaChanged?.Invoke();
+        }
+
         public void ResetForNewRun()
         {
             modifiers.Reset();
