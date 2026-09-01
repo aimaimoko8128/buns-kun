@@ -20,20 +20,21 @@ namespace BunsKun.Game
     }
 
     /// <summary>
-    /// The top-level orchestrator for a single run: spawns the player, generates each
-    /// area in sequence, reacts to room clears (offering upgrades / unlocking the area
-    /// exit), and handles the Game Over / Victory -> New Run cycle.
+    /// The top-level orchestrator for a single run: rolls the run seed, spawns the player,
+    /// generates each layer of the descent from that seed, reacts to room clears, and
+    /// handles the Game Over / Victory -> New Run cycle.
     /// </summary>
     public class RunController : MonoBehaviour
     {
-        /// <summary>Number of layers the dungeon descends through before the boss layer.</summary>
-        public const int TotalAreas = 5;
+        /// <summary>Layers the dungeon descends through. The last one holds the boss.</summary>
+        public const int TotalLayers = 5;
+        public const int TotalAreas = TotalLayers;   // kept for older UI code
+
         private readonly int[] mainPathLengths = { 5, 5, 6, 6, 7 };
         private readonly int[] optionalBranchCounts = { 2, 2, 2, 1, 1 };
 
-        /// <summary>One seed generated per run; every layer's generation derives from it so
-        /// the whole descent is reproducible from that single value rather than being
-        /// unconstrained randomness.</summary>
+        /// <summary>One seed per run. Every layer's terrain, enemies, items and rewards
+        /// derive from it, so entering the same seed replays the same descent.</summary>
         public int RunSeed { get; private set; }
 
         public GameObject CurrentPlayer { get; private set; }
@@ -44,14 +45,14 @@ namespace BunsKun.Game
         public IngredientInventory Inventory { get; private set; }
         public BunInventory BunInventory { get; private set; }
 
-        public int AreaDepth { get; private set; }
+        public int LayerDepth { get; private set; }
+        public int AreaDepth => LayerDepth;          // kept for older UI code
         public RunState State { get; private set; } = RunState.GameOver;
 
-        private RoomBuilder.BuiltArea currentBuiltArea;
-        private Room endRoomRef;
+        private LayerPlan currentPlan;
+        private RoomBuilder.BuiltLayer currentLayer;
         private GameObject portalGO;
         private CameraFollow cameraFollow;
-        private System.Random rng;
 
         public event Action OnRunStarted;
         public event Action<int> OnAreaChanged;
@@ -65,15 +66,22 @@ namespace BunsKun.Game
             cameraFollow = follow;
         }
 
+        /// <summary>Starts a run on a fresh random seed.</summary>
         public void StartNewRun()
         {
-            if (currentBuiltArea != null) Destroy(currentBuiltArea.Root);
+            StartNewRun(new System.Random().Next(1, int.MaxValue));
+        }
+
+        /// <summary>Starts a run on a specific seed, replaying an earlier descent exactly.</summary>
+        public void StartNewRun(int seed)
+        {
+            if (currentLayer != null) Destroy(currentLayer.Root);
             if (CurrentPlayer != null) Destroy(CurrentPlayer);
 
             Time.timeScale = 1f;
-            AreaDepth = 0;
+            RunSeed = seed;
+            LayerDepth = 0;
             State = RunState.Playing;
-            RunSeed = new System.Random().Next();
 
             CurrentPlayer = PlayerFactory.Spawn(Vector3.zero);
             PlayerHealth = CurrentPlayer.GetComponent<Health>();
@@ -84,49 +92,61 @@ namespace BunsKun.Game
             BunInventory = CurrentPlayer.GetComponent<BunInventory>();
 
             BunInventory.ResetForNewRun(BunDatabase.Starter);
+
+            // A run always begins with one basic attack equipped, so the first locked
+            // combat room is never a dead end.
+            IngredientData starter = IngredientDatabase.Starter;
+            Inventory.AddIngredient(starter);
+            Inventory.EquipToSlot(0, starter);
+
             PlayerHealth.SetMaxHealth(PlayerStats.MaxHealth, true);
             PlayerHealth.OnDeath += HandleGameOver;
 
             if (cameraFollow != null) cameraFollow.Target = CurrentPlayer.transform;
 
-            GenerateArea(0);
+            GenerateLayer(0);
             OnRunStarted?.Invoke();
         }
 
-        private void GenerateArea(int depth)
+        private void GenerateLayer(int depth)
         {
-            if (currentBuiltArea != null) Destroy(currentBuiltArea.Root);
-            endRoomRef = null;
+            if (currentLayer != null) Destroy(currentLayer.Root);
             portalGO = null;
 
-            AreaDepth = depth;
-            // Derived deterministically from the single run seed, not freshly randomized,
-            // so the whole descent is reproducible from RunSeed alone.
-            rng = new System.Random(RunSeed + depth * 104729);
-            bool isFinal = depth == TotalAreas - 1;
-            int pathLen = mainPathLengths[Mathf.Clamp(depth, 0, mainPathLengths.Length - 1)];
+            LayerDepth = depth;
+            bool isFinal = depth == TotalLayers - 1;
+            int pathLength = mainPathLengths[Mathf.Clamp(depth, 0, mainPathLengths.Length - 1)];
             int branches = optionalBranchCounts[Mathf.Clamp(depth, 0, optionalBranchCounts.Length - 1)];
 
-            var generated = MapGenerator.Generate(rng, pathLen, isFinal, branches);
-            currentBuiltArea = RoomBuilder.Build(generated, Vector3.zero, rng, depth);
+            // Each layer's seed is derived from the run seed, so the whole descent is
+            // reproducible from that single number.
+            int layerSeed = unchecked(RunSeed + depth * 104729);
+            var profile = PlayerMovementProfile.FromPlayer(PlayerController, PlayerStats);
 
-            foreach (var room in currentBuiltArea.Rooms.Values)
+            currentPlan = LayerGenerator.Generate(layerSeed, depth, isFinal, pathLength, branches, profile);
+            foreach (string warning in currentPlan.ValidationWarnings)
             {
-                if (room.RequiresClear)
-                {
-                    room.OnCombatCleared += HandleRoomCleared;
-                }
+                Debug.LogWarning($"[Layer {depth} seed {layerSeed}] {warning}");
             }
 
-            endRoomRef = currentBuiltArea.Rooms[generated.End];
+            currentLayer = RoomBuilder.Build(currentPlan);
+
+            foreach (var room in currentLayer.Rooms.Values)
+            {
+                if (room.RequiresClear) room.OnCombatCleared += HandleRoomCleared;
+            }
+
             if (!isFinal)
             {
-                portalGO = CreatePortal(endRoomRef.WorldCenter);
+                portalGO = CreatePortal(currentLayer.GoalPosition);
             }
 
             if (CurrentPlayer != null)
             {
-                CurrentPlayer.transform.position = currentBuiltArea.StartSpawnPosition + Vector3.up * 1f;
+                CurrentPlayer.transform.position = currentLayer.SpawnPosition;
+                var rb = CurrentPlayer.GetComponent<Rigidbody2D>();
+                if (rb != null) rb.linearVelocity = Vector2.zero;
+                PlayerController?.RefillJetpack();
             }
             if (cameraFollow != null && CurrentPlayer != null)
             {
@@ -136,10 +156,13 @@ namespace BunsKun.Game
             OnAreaChanged?.Invoke(depth);
         }
 
-        private GameObject CreatePortal(Vector3 center)
+        private GameObject CreatePortal(Vector3 position)
         {
-            var go = new GameObject("AreaExitPortal");
-            go.transform.position = center;
+            var go = new GameObject("LayerExitPortal");
+            // Parented to the layer so it is destroyed with it - an orphaned portal would
+            // still be standing in the next layer and could be walked into again.
+            if (currentLayer != null) go.transform.SetParent(currentLayer.Root.transform, true);
+            go.transform.position = position;
             go.transform.localScale = Vector3.one * 1.4f;
 
             var sr = go.AddComponent<SpriteRenderer>();
@@ -151,16 +174,33 @@ namespace BunsKun.Game
             col.radius = 0.7f;
 
             var trigger = go.AddComponent<AreaExitTrigger>();
-            trigger.OnEntered += AdvanceToNextArea;
+            trigger.OnEntered += AdvanceToNextLayer;
             go.SetActive(false);
             return go;
+        }
+
+        private void Update()
+        {
+            if (State != RunState.Playing || CurrentPlayer == null || currentPlan == null) return;
+
+            // Safety net: if the player ever ends up under the world, put them back on the
+            // layer's spawn instead of falling forever.
+            float floor = currentPlan.Tiles.WorldOrigin.y - 12f;
+            if (CurrentPlayer.transform.position.y < floor)
+            {
+                CurrentPlayer.transform.position = currentLayer.SpawnPosition;
+                var rb = CurrentPlayer.GetComponent<Rigidbody2D>();
+                if (rb != null) rb.linearVelocity = Vector2.zero;
+                PlayerHealth?.TakeDamage(10f, gameObject);
+                cameraFollow?.SnapTo(CurrentPlayer.transform.position);
+            }
         }
 
         private void HandleRoomCleared(Room room)
         {
             OnRoomCleared?.Invoke(room);
 
-            if (room == endRoomRef && portalGO != null)
+            if (currentLayer != null && room == currentLayer.GoalRoom && portalGO != null)
             {
                 portalGO.SetActive(true);
             }
@@ -171,20 +211,31 @@ namespace BunsKun.Game
                 return;
             }
 
-            OfferUpgradeChoice();
+            OfferUpgradeChoice(room);
         }
 
-        private void OfferUpgradeChoice()
+        private void OfferUpgradeChoice(Room room)
         {
+            // The three cards were rolled during generation, so rewards follow the seed too.
+            List<UpgradeData> choices = null;
+            if (currentPlan != null && room.Node != null)
+            {
+                currentPlan.RoomRewards.TryGetValue(room.Node, out choices);
+            }
+            if (choices == null || choices.Count == 0)
+            {
+                choices = UpgradeDatabase.RollChoices(new System.Random(RunSeed + LayerDepth), 3);
+            }
+
             State = RunState.UpgradeChoice;
             Time.timeScale = 0f;
-            var choices = UpgradeDatabase.RollChoices(rng ?? new System.Random(), 3);
             OnUpgradeChoiceOffered?.Invoke(choices);
         }
 
         public void ApplyUpgradeChoice(UpgradeData data)
         {
             if (State != RunState.UpgradeChoice) return;
+
             float before = PlayerStats.MaxHealth;
             PlayerStats.Upgrades.Apply(data);
             float after = PlayerStats.MaxHealth;
@@ -195,10 +246,10 @@ namespace BunsKun.Game
             Time.timeScale = 1f;
         }
 
-        private void AdvanceToNextArea()
+        private void AdvanceToNextLayer()
         {
             if (State != RunState.Playing) return;
-            GenerateArea(AreaDepth + 1);
+            GenerateLayer(LayerDepth + 1);
         }
 
         private void HandleGameOver()

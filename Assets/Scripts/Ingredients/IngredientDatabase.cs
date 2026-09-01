@@ -43,9 +43,46 @@ namespace BunsKun.Ingredients
             return list[rng.Next(list.Count)];
         }
 
+        /// <summary>The basic ingredient a run begins with, so the player is never left
+        /// with no way to fight before finding their first pickup.</summary>
+        public static IngredientData Starter
+        {
+            get
+            {
+                foreach (var ing in All)
+                {
+                    if (ing.isStarter) return ing;
+                }
+                return All[0];
+            }
+        }
+
+        /// <summary>Ingredients that can be found in the world (everything except the starter).</summary>
+        public static IngredientData GetRandomFindable(System.Random rng)
+        {
+            var findable = new List<IngredientData>();
+            foreach (var ing in All)
+            {
+                if (!ing.isStarter) findable.Add(ing);
+            }
+            if (findable.Count == 0) return GetRandom(rng);
+            return findable[rng.Next(findable.Count)];
+        }
+
         private static void Build()
         {
             all = new List<IngredientData>();
+
+            // --- Starter: weak, cheap and fast. Always equipped at the start of a run. ---
+            var crumb = IngredientData.Create("crumb", "Breadcrumb", "A stale crumb flicked at speed. Weak, but it always works.",
+                new Color(0.85f, 0.78f, 0.6f), 4f, 0.22f);
+            crumb.kind = IngredientKind.Attack;
+            crumb.isStarter = true;
+            crumb.baseDamage = 5f;
+            crumb.projectileSpeed = 16f;
+            crumb.range = 9f;
+            crumb.baseCritChance = 0.05f;
+            all.Add(crumb);
 
             // --- Attack ingredients ---
             var tomato = IngredientData.Create("tomato", "Tomato", "Launches a fireball that explodes on contact.",

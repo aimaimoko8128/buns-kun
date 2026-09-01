@@ -18,6 +18,9 @@ namespace BunsKun.Ingredients
         public float activationDelay = 0.4f;
         public IngredientKind kind = IngredientKind.Attack;
 
+        [Tooltip("The weak ingredient every run starts equipped with. Never appears as a pickup.")]
+        public bool isStarter = false;
+
         [Header("Attack (used when kind == Attack)")]
         public float baseDamage = 10f;
         public float projectileSpeed = 12f;

@@ -53,6 +53,9 @@ namespace BunsKun.Game
             var endScreenUI = controllerGO.AddComponent<EndScreenUI>();
             endScreenUI.Initialize(runController, canvasRoot);
 
+            var seedUI = controllerGO.AddComponent<SeedEntryUI>();
+            seedUI.Initialize(runController, canvasRoot);
+
             runController.StartNewRun();
         }
 
