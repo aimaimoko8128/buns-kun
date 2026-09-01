@@ -25,6 +25,8 @@ namespace BunsKun.Enemies
         private float slamTelegraphRemaining = -1f;
         private float hpMultiplier = 1f;
         private float dmgMultiplier = 1f;
+        private Collider2D bodyCollider;
+        private CircleCollider2D damageZone;
 
         public bool IsBoss => data != null && data.behavior == EnemyBehaviorType.Boss;
         public event System.Action<EnemyController> OnDied;
@@ -55,6 +57,23 @@ namespace BunsKun.Enemies
             var box = GetComponent<BoxCollider2D>();
             if (box == null) box = gameObject.AddComponent<BoxCollider2D>();
             box.size = Vector2.one * 0.95f;
+            bodyCollider = box;
+
+            // The solid body collider stays solid against terrain and other enemies (so
+            // enemies keep standing on floors and don't overlap each other), but it must
+            // never physically push or block the player - that made the player feel stuck
+            // whenever an enemy walked into them. Damage on touch is instead handled by a
+            // separate trigger collider below, which never blocks movement.
+            Transform player = FindPlayer();
+            if (player != null)
+            {
+                var playerCollider = player.GetComponent<Collider2D>();
+                if (playerCollider != null) Physics2D.IgnoreCollision(bodyCollider, playerCollider, true);
+            }
+
+            damageZone = gameObject.AddComponent<CircleCollider2D>();
+            damageZone.isTrigger = true;
+            damageZone.radius = 0.6f;
 
             slamTimer = data.slamCooldown;
         }
@@ -219,13 +238,13 @@ namespace BunsKun.Enemies
                 Team.Enemy, 14f, 1f, data.color);
         }
 
-        private void OnCollisionStay2D(Collision2D collision)
+        private void OnTriggerStay2D(Collider2D other)
         {
             if (attackTimer > 0f) return;
-            var health2 = collision.collider.GetComponentInParent<Health>();
-            if (health2 == null || health2.Team != Team.Player) return;
+            var otherHealth = other.GetComponentInParent<Health>();
+            if (otherHealth == null || otherHealth.Team != Team.Player) return;
 
-            health2.TakeDamage(data.contactDamage * dmgMultiplier, gameObject);
+            otherHealth.TakeDamage(data.contactDamage * dmgMultiplier, gameObject);
             attackTimer = data.attackCooldown;
         }
 
