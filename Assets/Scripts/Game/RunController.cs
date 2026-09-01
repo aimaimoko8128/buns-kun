@@ -26,14 +26,21 @@ namespace BunsKun.Game
     /// </summary>
     public class RunController : MonoBehaviour
     {
-        public const int TotalAreas = 3;
-        private readonly int[] mainPathLengths = { 5, 6, 6 };
-        private readonly int[] optionalBranchCounts = { 2, 2, 1 };
+        /// <summary>Number of layers the dungeon descends through before the boss layer.</summary>
+        public const int TotalAreas = 5;
+        private readonly int[] mainPathLengths = { 5, 5, 6, 6, 7 };
+        private readonly int[] optionalBranchCounts = { 2, 2, 2, 1, 1 };
+
+        /// <summary>One seed generated per run; every layer's generation derives from it so
+        /// the whole descent is reproducible from that single value rather than being
+        /// unconstrained randomness.</summary>
+        public int RunSeed { get; private set; }
 
         public GameObject CurrentPlayer { get; private set; }
         public Health PlayerHealth { get; private set; }
         public PlayerStats PlayerStats { get; private set; }
         public PlayerCombat PlayerCombat { get; private set; }
+        public PlayerController PlayerController { get; private set; }
         public IngredientInventory Inventory { get; private set; }
         public BunInventory BunInventory { get; private set; }
 
@@ -66,11 +73,13 @@ namespace BunsKun.Game
             Time.timeScale = 1f;
             AreaDepth = 0;
             State = RunState.Playing;
+            RunSeed = new System.Random().Next();
 
             CurrentPlayer = PlayerFactory.Spawn(Vector3.zero);
             PlayerHealth = CurrentPlayer.GetComponent<Health>();
             PlayerStats = CurrentPlayer.GetComponent<PlayerStats>();
             PlayerCombat = CurrentPlayer.GetComponent<PlayerCombat>();
+            PlayerController = CurrentPlayer.GetComponent<PlayerController>();
             Inventory = CurrentPlayer.GetComponent<IngredientInventory>();
             BunInventory = CurrentPlayer.GetComponent<BunInventory>();
 
@@ -91,7 +100,9 @@ namespace BunsKun.Game
             portalGO = null;
 
             AreaDepth = depth;
-            rng = new System.Random();
+            // Derived deterministically from the single run seed, not freshly randomized,
+            // so the whole descent is reproducible from RunSeed alone.
+            rng = new System.Random(RunSeed + depth * 104729);
             bool isFinal = depth == TotalAreas - 1;
             int pathLen = mainPathLengths[Mathf.Clamp(depth, 0, mainPathLengths.Length - 1)];
             int branches = optionalBranchCounts[Mathf.Clamp(depth, 0, optionalBranchCounts.Length - 1)];

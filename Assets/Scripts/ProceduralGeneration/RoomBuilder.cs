@@ -109,8 +109,9 @@ namespace BunsKun.ProceduralGeneration
 
         private static void PopulateRoomContents(RoomNode node, Room room, Transform parent, Vector3 center, float floorY, System.Random rng, int areaDepth)
         {
-            float hpScale = 1f + areaDepth * 0.35f;
-            float dmgScale = 1f + areaDepth * 0.25f;
+            // Tuned for a 5-layer descent (areaDepth 0..4) rather than the previous 3.
+            float hpScale = 1f + areaDepth * 0.28f;
+            float dmgScale = 1f + areaDepth * 0.2f;
 
             switch (node.Type)
             {

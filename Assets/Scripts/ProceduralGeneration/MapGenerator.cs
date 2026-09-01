@@ -11,8 +11,8 @@ namespace BunsKun.ProceduralGeneration
     /// </summary>
     public static class MapGenerator
     {
-        public const float RoomWidth = 22f;
-        public const float RoomHeight = 13f;
+        public const float RoomWidth = 30f;
+        public const float RoomHeight = 17f;
 
         public struct Edge
         {
@@ -93,7 +93,11 @@ namespace BunsKun.ProceduralGeneration
 
         private static Direction PickFreeDirection(System.Random rng, Dictionary<Vector2Int, RoomNode> nodes, Vector2Int from)
         {
-            var weighted = new List<Direction> { Direction.Right, Direction.Right, Direction.Right, Direction.Up, Direction.Down };
+            // The dungeon is a descent: the main path mostly tunnels downward, with an
+            // occasional sideways wiggle for a wider layer. Up is deliberately excluded from
+            // the main path so the player is never routed back toward the surface - it is
+            // still available to optional branch rooms for a riskier detour.
+            var weighted = new List<Direction> { Direction.Down, Direction.Down, Direction.Down, Direction.Left, Direction.Right };
             Shuffle(rng, weighted);
             foreach (var dir in weighted)
             {
