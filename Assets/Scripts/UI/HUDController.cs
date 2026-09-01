@@ -17,9 +17,11 @@ namespace BunsKun.UI
         private RunController runController;
         private Image hpFill;
         private Image manaFill;
+        private Image hoverFill;
         private Text hpText;
         private Text manaText;
         private Text areaText;
+        private Text seedText;
         private Text hintText;
 
         private readonly List<Image> previewBoxes = new List<Image>();
@@ -40,7 +42,7 @@ namespace BunsKun.UI
             topLeft.anchorMax = new Vector2(0f, 1f);
             topLeft.pivot = new Vector2(0f, 1f);
             topLeft.anchoredPosition = new Vector2(20, -20);
-            topLeft.sizeDelta = new Vector2(420, 140);
+            topLeft.sizeDelta = new Vector2(420, 165);
 
             var hpBack = UIFactory.CreateFilledBar(topLeft, "HPBar", new Color(0.15f, 0.05f, 0.05f, 0.85f), new Color(0.85f, 0.2f, 0.2f), out hpFill);
             var hpRect = hpBack.GetComponent<RectTransform>();
@@ -62,20 +64,36 @@ namespace BunsKun.UI
             manaText = UIFactory.CreateText(manaBack.transform, "ManaText", "100/100", 15, Color.white, TextAnchor.MiddleCenter);
             UIFactory.Stretch(manaText.GetComponent<RectTransform>(), Vector2.zero, Vector2.zero);
 
-            areaText = UIFactory.CreateText(topLeft, "AreaText", "Area 1/3", 20, Color.white);
+            var hoverBack = UIFactory.CreateFilledBar(topLeft, "HoverBar", new Color(0.05f, 0.15f, 0.1f, 0.85f), new Color(0.5f, 0.9f, 0.6f), out hoverFill);
+            var hoverRect = hoverBack.GetComponent<RectTransform>();
+            hoverRect.anchorMin = new Vector2(0, 1);
+            hoverRect.anchorMax = new Vector2(0, 1);
+            hoverRect.pivot = new Vector2(0, 1);
+            hoverRect.anchoredPosition = new Vector2(0, -66);
+            hoverRect.sizeDelta = new Vector2(340, 14);
+
+            areaText = UIFactory.CreateText(topLeft, "AreaText", "Layer 1 / 5", 20, Color.white);
             var areaRect = areaText.GetComponent<RectTransform>();
             areaRect.anchorMin = new Vector2(0, 1);
             areaRect.anchorMax = new Vector2(0, 1);
             areaRect.pivot = new Vector2(0, 1);
-            areaRect.anchoredPosition = new Vector2(0, -74);
+            areaRect.anchoredPosition = new Vector2(0, -90);
             areaRect.sizeDelta = new Vector2(340, 26);
+
+            seedText = UIFactory.CreateText(topLeft, "SeedText", "", 13, new Color(1, 1, 1, 0.55f));
+            var seedRect = seedText.GetComponent<RectTransform>();
+            seedRect.anchorMin = new Vector2(0, 1);
+            seedRect.anchorMax = new Vector2(0, 1);
+            seedRect.pivot = new Vector2(0, 1);
+            seedRect.anchoredPosition = new Vector2(0, -116);
+            seedRect.sizeDelta = new Vector2(340, 20);
 
             hintText = UIFactory.CreateText(topLeft, "HintText", "Tab: Inventory", 15, new Color(1, 1, 1, 0.7f));
             var hintRect = hintText.GetComponent<RectTransform>();
             hintRect.anchorMin = new Vector2(0, 1);
             hintRect.anchorMax = new Vector2(0, 1);
             hintRect.pivot = new Vector2(0, 1);
-            hintRect.anchoredPosition = new Vector2(0, -102);
+            hintRect.anchoredPosition = new Vector2(0, -138);
             hintRect.sizeDelta = new Vector2(340, 24);
 
             // Ingredient sequence preview, bottom-center.
@@ -105,7 +123,8 @@ namespace BunsKun.UI
 
         private void UpdateAreaText()
         {
-            areaText.text = "Area " + (runController.AreaDepth + 1) + " / " + RunController.TotalAreas;
+            areaText.text = "Layer " + (runController.AreaDepth + 1) + " / " + RunController.TotalAreas;
+            seedText.text = "Seed: " + runController.RunSeed;
         }
 
         private void Update()
@@ -128,6 +147,12 @@ namespace BunsKun.UI
                 float manaFraction = stats.MaxMana <= 0 ? 0 : combat.CurrentMana / stats.MaxMana;
                 manaFill.fillAmount = manaFraction;
                 manaText.text = Mathf.FloorToInt(combat.CurrentMana) + " / " + Mathf.FloorToInt(stats.MaxMana);
+            }
+
+            var playerController = runController.PlayerController;
+            if (playerController != null)
+            {
+                hoverFill.fillAmount = playerController.HoverFraction;
             }
 
             if (inventory != null)
