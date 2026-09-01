@@ -15,6 +15,17 @@ namespace BunsKun.Game
 
         private static readonly Dictionary<string, Sprite> Cache = new Dictionary<string, Sprite>();
 
+        /// <summary>
+        /// Clears the sprite cache. Must be called once at the start of every Play session:
+        /// when "Enter Play Mode Options" has domain reload disabled, this static cache
+        /// otherwise keeps referencing Sprite objects that Unity already destroyed when the
+        /// previous Play session ended, which makes everything built from them invisible.
+        /// </summary>
+        public static void ResetCache()
+        {
+            Cache.Clear();
+        }
+
         public static Sprite Circle(Color color)
         {
             string key = "circle_" + ColorUtility.ToHtmlStringRGBA(color);

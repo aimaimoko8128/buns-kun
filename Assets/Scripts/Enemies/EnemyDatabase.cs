@@ -18,6 +18,12 @@ namespace BunsKun.Enemies
             get { if (boss == null) Build(); return boss; }
         }
 
+        public static void ResetCache()
+        {
+            all = null;
+            boss = null;
+        }
+
         public static EnemyData GetById(string id)
         {
             foreach (var e in All) if (e.enemyId == id) return e;

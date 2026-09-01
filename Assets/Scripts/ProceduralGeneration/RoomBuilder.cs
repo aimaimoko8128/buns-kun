@@ -230,9 +230,14 @@ namespace BunsKun.ProceduralGeneration
                 TerrainBuilder.CreateSolidBlock(center, new Vector2(WallThickness, fullHeight), parent, color, label);
                 return;
             }
-            float segmentHeight = (fullHeight - GapSize) / 2f;
-            TerrainBuilder.CreateSolidBlock(center + new Vector3(0, -(GapSize / 2f + segmentHeight / 2f), 0), new Vector2(WallThickness, segmentHeight), parent, color, label + "_B");
-            TerrainBuilder.CreateSolidBlock(center + new Vector3(0, GapSize / 2f + segmentHeight / 2f, 0), new Vector2(WallThickness, segmentHeight), parent, color, label + "_T");
+            // The doorway starts right at floor level so the player can simply walk through
+            // it instead of needing to jump - only the wall above the gap is built.
+            float topSegmentHeight = fullHeight - GapSize;
+            if (topSegmentHeight > 0.1f)
+            {
+                float topSegmentCenterY = center.y + fullHeight / 2f - topSegmentHeight / 2f;
+                TerrainBuilder.CreateSolidBlock(new Vector3(center.x, topSegmentCenterY, center.z), new Vector2(WallThickness, topSegmentHeight), parent, color, label + "_T");
+            }
         }
 
         private static void BuildGapAndBarrier(MapGenerator.Edge edge, Vector3 worldOrigin, BuiltArea built)
@@ -254,10 +259,13 @@ namespace BunsKun.ProceduralGeneration
         {
             float halfW = MapGenerator.RoomWidth / 2f;
             float halfH = MapGenerator.RoomHeight / 2f;
+            // Left/Right doorways sit right at floor level (see BuildVerticalWallWithGap),
+            // not the room's vertical center, so the lock barrier must match that position.
+            float doorwayY = -halfH + GapSize / 2f;
             switch (dir)
             {
-                case Direction.Right: return roomCenter + new Vector3(halfW, 0, 0);
-                case Direction.Left: return roomCenter + new Vector3(-halfW, 0, 0);
+                case Direction.Right: return roomCenter + new Vector3(halfW, doorwayY, 0);
+                case Direction.Left: return roomCenter + new Vector3(-halfW, doorwayY, 0);
                 case Direction.Up: return roomCenter + new Vector3(0, halfH, 0);
                 default: return roomCenter + new Vector3(0, -halfH, 0);
             }

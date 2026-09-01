@@ -11,6 +11,11 @@ namespace BunsKun.Upgrades
             get { if (all == null) Build(); return all; }
         }
 
+        public static void ResetCache()
+        {
+            all = null;
+        }
+
         /// <summary>Returns `count` distinct random upgrades to offer as a reward choice.</summary>
         public static List<UpgradeData> RollChoices(System.Random rng, int count)
         {

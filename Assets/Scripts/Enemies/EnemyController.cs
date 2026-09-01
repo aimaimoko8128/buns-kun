@@ -59,6 +59,13 @@ namespace BunsKun.Enemies
             slamTimer = data.slamCooldown;
         }
 
+        /// <summary>Clears the cached player reference. See SpriteFactory.ResetCache for why
+        /// this must run once at the start of every Play session.</summary>
+        public static void ResetCachedPlayer()
+        {
+            cachedPlayer = null;
+        }
+
         private static Transform FindPlayer()
         {
             if (cachedPlayer == null)

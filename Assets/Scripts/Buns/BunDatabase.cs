@@ -19,6 +19,12 @@ namespace BunsKun.Buns
             get { if (starter == null) Build(); return starter; }
         }
 
+        public static void ResetCache()
+        {
+            all = null;
+            starter = null;
+        }
+
         public static BunData GetRandomNonStarter(System.Random rng)
         {
             var list = All;

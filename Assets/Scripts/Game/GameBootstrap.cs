@@ -1,5 +1,9 @@
 using UnityEngine;
 using BunsKun.UI;
+using BunsKun.Ingredients;
+using BunsKun.Buns;
+using BunsKun.Enemies;
+using BunsKun.Upgrades;
 
 namespace BunsKun.Game
 {
@@ -13,6 +17,20 @@ namespace BunsKun.Game
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Boot()
         {
+            // "Enter Play Mode Options" in this project has domain reload disabled for
+            // faster iteration, so static caches (sprites, ScriptableObject databases, the
+            // cached player reference) survive from the previous Play session even though
+            // every GameObject they pointed at was destroyed. Without this reset, a second
+            // Play in the same Editor session renders nothing: the sprites/data are all
+            // stale references to destroyed objects. RuntimeInitializeOnLoadMethod still
+            // fires every Play regardless of the domain reload setting, so this always runs.
+            SpriteFactory.ResetCache();
+            IngredientDatabase.ResetCache();
+            BunDatabase.ResetCache();
+            EnemyDatabase.ResetCache();
+            UpgradeDatabase.ResetCache();
+            EnemyController.ResetCachedPlayer();
+
             var cameraFollow = SetupCamera();
             UIFactory.EnsureEventSystem();
 

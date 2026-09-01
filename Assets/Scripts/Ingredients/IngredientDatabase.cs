@@ -21,6 +21,13 @@ namespace BunsKun.Ingredients
             }
         }
 
+        /// <summary>Forces the roster to be rebuilt on next access. See SpriteFactory.ResetCache
+        /// for why this must run once at the start of every Play session.</summary>
+        public static void ResetCache()
+        {
+            all = null;
+        }
+
         public static IngredientData GetById(string id)
         {
             foreach (var ing in All)
