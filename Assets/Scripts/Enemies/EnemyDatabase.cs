@@ -43,18 +43,23 @@ namespace BunsKun.Enemies
             var list = new List<EnemyData>();
             foreach (var e in All)
             {
-                int minDepth = e.enemyId switch
-                {
-                    "pickle_swarm" => 0,
-                    "onion_ring" => 0,
-                    "fry_sniper" => 1,
-                    "meat_tank" => 1,
-                    "wing_flapper" => 2,
-                    _ => 0
-                };
-                if (depth >= minDepth) list.Add(e);
+                if (depth >= MinimumDepthFor(e.enemyId)) list.Add(e);
             }
             return list.Count > 0 ? list : new List<EnemyData>(All);
+        }
+
+        /// <summary>How deep the run has to be before this enemy starts appearing.</summary>
+        private static int MinimumDepthFor(string enemyId)
+        {
+            switch (enemyId)
+            {
+                case "pickle_swarm": return 0;
+                case "onion_ring": return 0;
+                case "fry_sniper": return 1;
+                case "meat_tank": return 1;
+                case "wing_flapper": return 2;
+                default: return 0;
+            }
         }
 
         private static void Build()

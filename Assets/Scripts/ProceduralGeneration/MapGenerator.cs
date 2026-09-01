@@ -11,8 +11,12 @@ namespace BunsKun.ProceduralGeneration
     /// </summary>
     public static class MapGenerator
     {
-        public const float RoomWidth = 30f;
-        public const float RoomHeight = 17f;
+        /// <summary>Room size in tiles (one tile is one world unit).</summary>
+        public const int RoomWidthTiles = 32;
+        public const int RoomHeightTiles = 20;
+
+        public const float RoomWidth = RoomWidthTiles;
+        public const float RoomHeight = RoomHeightTiles;
 
         public struct Edge
         {

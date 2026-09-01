@@ -2,273 +2,156 @@ using System.Collections.Generic;
 using UnityEngine;
 using BunsKun.Rooms;
 using BunsKun.Enemies;
-using BunsKun.Ingredients;
-using BunsKun.Buns;
 using BunsKun.Pickups;
+using BunsKun.Game;
 
 namespace BunsKun.ProceduralGeneration
 {
     /// <summary>
-    /// Turns a generated room graph (MapGenerator.GeneratedArea) into physical rooms:
-    /// floors, walls with door gaps, internal platforms, enemies, hazards and pickups.
-    /// Everything is built from primitives at runtime, so there is nothing here that can
-    /// end up as a broken prefab or scene reference.
+    /// Instantiates a validated LayerPlan into the scene: merged terrain, one Room object
+    /// per room, the enemies/pickups/hazards the generator placed, and the lock barriers
+    /// that hold a combat room's exits shut until it is cleared.
+    ///
+    /// All decisions were already made (and validated) by LayerGenerator; nothing here
+    /// is random, so what you see is exactly what the seed described.
     /// </summary>
     public static class RoomBuilder
     {
-        private const float WallThickness = 1f;
-        private const float GapSize = 4.2f;
-        private static readonly Color WallColor = new Color(0.35f, 0.25f, 0.2f);
-        private static readonly Color FloorColor = new Color(0.45f, 0.32f, 0.22f);
-        private static readonly Color PlatformColor = new Color(0.6f, 0.45f, 0.3f);
-        private static readonly Color BackgroundColor = new Color(0.16f, 0.14f, 0.18f);
+        private const float PlayerBodyHalfHeight = 0.55f;
 
-        public class BuiltArea
+        public class BuiltLayer
         {
             public GameObject Root;
-            public Dictionary<RoomNode, Room> Rooms = new Dictionary<RoomNode, Room>();
-            public Vector3 StartSpawnPosition;
+            public readonly Dictionary<RoomNode, Room> Rooms = new Dictionary<RoomNode, Room>();
+            public Vector3 SpawnPosition;
+            public Vector3 GoalPosition;
+            public Room GoalRoom;
         }
 
-        public static BuiltArea Build(MapGenerator.GeneratedArea area, Vector3 worldOrigin, System.Random rng, int areaDepth)
+        public static BuiltLayer Build(LayerPlan plan)
         {
-            var built = new BuiltArea();
-            built.Root = new GameObject("Area_Depth" + areaDepth);
+            var built = new BuiltLayer();
+            built.Root = new GameObject("Layer_" + plan.Depth + "_Seed" + plan.Seed);
 
-            foreach (var node in area.Nodes.Values)
+            TerrainRenderer.Build(plan.Tiles, built.Root.transform);
+
+            foreach (var kv in plan.Rooms)
             {
-                Vector3 roomCenter = worldOrigin + new Vector3(node.GridPos.x * MapGenerator.RoomWidth, node.GridPos.y * MapGenerator.RoomHeight, 0f);
-                var room = BuildRoom(node, roomCenter, built.Root.transform, rng, areaDepth);
+                RoomNode node = kv.Key;
+                RoomPlan roomPlan = kv.Value;
+
+                var roomGO = new GameObject($"Room_{node.Type}_{node.GridPos.x}_{node.GridPos.y}");
+                roomGO.transform.SetParent(built.Root.transform, false);
+
+                var room = roomGO.AddComponent<Room>();
+                Vector2 center = plan.Tiles.TileCenterToWorld(
+                    roomPlan.Bounds.xMin + roomPlan.Bounds.width / 2,
+                    roomPlan.Bounds.yMin + roomPlan.Bounds.height / 2);
+                room.Setup(node, roomPlan.RequiresClear, center);
                 built.Rooms[node] = room;
-
-                if (node.Type == RoomType.Start)
-                {
-                    built.StartSpawnPosition = roomCenter;
-                }
             }
 
-            foreach (var edge in area.Edges)
-            {
-                BuildGapAndBarrier(edge, worldOrigin, built);
-            }
+            BuildLockBarriers(plan, built);
+            SpawnEnemies(plan, built);
+            SpawnPickups(plan, built);
+            SpawnHazards(plan, built);
 
+            built.SpawnPosition = plan.Tiles.StandPositionToWorld(plan.SpawnTile, PlayerBodyHalfHeight);
+            built.GoalPosition = plan.Tiles.StandPositionToWorld(plan.GoalTile, PlayerBodyHalfHeight);
+            built.GoalRoom = built.Rooms[plan.GoalRoom];
             return built;
         }
 
-        private static Room BuildRoom(RoomNode node, Vector3 center, Transform parent, System.Random rng, int areaDepth)
+        private static void BuildLockBarriers(LayerPlan plan, BuiltLayer built)
         {
-            var roomGO = new GameObject("Room_" + node.Type + "_" + node.GridPos);
-            roomGO.transform.SetParent(parent, true);
-            roomGO.transform.position = Vector3.zero;
-
-            var room = roomGO.AddComponent<Room>();
-            bool requiresClear = node.Type == RoomType.Combat || node.Type == RoomType.Boss || node.Type == RoomType.Optional;
-            room.Setup(node, requiresClear, center);
-
-            // Background panel
-            var bg = TerrainBuilder.CreateSolidBlock(center, new Vector2(MapGenerator.RoomWidth, MapGenerator.RoomHeight), roomGO.transform, BackgroundColor, "Background");
-            var bgCol = bg.GetComponent<Collider2D>();
-            if (bgCol != null) Object.Destroy(bgCol);
-            bg.GetComponent<SpriteRenderer>().sortingOrder = -2;
-
-            float halfW = MapGenerator.RoomWidth / 2f;
-            float halfH = MapGenerator.RoomHeight / 2f;
-            bool hasRight = node.Connections.ContainsKey(Direction.Right);
-            bool hasLeft = node.Connections.ContainsKey(Direction.Left);
-            bool hasUp = node.Connections.ContainsKey(Direction.Up);
-            bool hasDown = node.Connections.ContainsKey(Direction.Down);
-
-            BuildHorizontalWallWithGap(center + new Vector3(0, -halfH, 0), MapGenerator.RoomWidth, hasDown, roomGO.transform, FloorColor, "Floor");
-            BuildHorizontalWallWithGap(center + new Vector3(0, halfH, 0), MapGenerator.RoomWidth, hasUp, roomGO.transform, WallColor, "Ceiling");
-            BuildVerticalWallWithGap(center + new Vector3(-halfW, 0, 0), MapGenerator.RoomHeight, hasLeft, roomGO.transform, WallColor, "WallLeft");
-            BuildVerticalWallWithGap(center + new Vector3(halfW, 0, 0), MapGenerator.RoomHeight, hasRight, roomGO.transform, WallColor, "WallRight");
-
-            float floorY = center.y - halfH + WallThickness / 2f;
-
-            if (hasUp)
+            foreach (var door in plan.Doors)
             {
-                BuildStaircase(roomGO.transform, center, floorY, center.y + halfH - WallThickness / 2f, rng);
+                if (!door.Parent.RequiresClearLock()) continue;
+                if (!built.Rooms.TryGetValue(door.Parent, out Room parentRoom)) continue;
+
+                RectInt rect = door.BarrierRect;
+                float width = rect.width + 1f;
+                float height = rect.height + 1f;
+                Vector2 min = plan.Tiles.TileCenterToWorld(rect.xMin, rect.yMin) - new Vector2(0.5f, 0.5f);
+                var center = new Vector3(min.x + width * 0.5f, min.y + height * 0.5f, 0f);
+
+                var barrier = new GameObject("LockBarrier");
+                barrier.transform.SetParent(parentRoom.transform, true);
+                barrier.transform.position = center;
+
+                var sr = barrier.AddComponent<SpriteRenderer>();
+                sr.sprite = SpriteFactory.Square(new Color(0.75f, 0.25f, 0.25f, 0.85f));
+                sr.drawMode = SpriteDrawMode.Sliced;
+                sr.size = new Vector2(width, height);
+                sr.sortingOrder = 2;
+
+                var col = barrier.AddComponent<BoxCollider2D>();
+                col.size = new Vector2(width, height);
+
+                parentRoom.AddLockBarrier(barrier);
+            }
+        }
+
+        private static void SpawnEnemies(LayerPlan plan, BuiltLayer built)
+        {
+            foreach (var placement in plan.Enemies)
+            {
+                if (!built.Rooms.TryGetValue(placement.Room, out Room room)) continue;
+                Vector3 pos = plan.Tiles.StandPositionToWorld(placement.Tile, 0.6f);
+                var enemy = EnemySpawner.Spawn(placement.Data, pos, room.transform,
+                    placement.HealthScale, placement.DamageScale);
+                room.RegisterEnemy(enemy);
             }
 
-            // A couple of extra random platforms for combat variety, avoiding the very center.
-            if (node.Type == RoomType.Combat || node.Type == RoomType.Optional)
+            // The boss stands where the final room's goal is.
+            if (plan.IsFinalLayer && built.Rooms.TryGetValue(plan.GoalRoom, out Room bossRoom))
             {
-                int extra = rng.Next(1, 3);
-                for (int i = 0; i < extra; i++)
+                Vector3 pos = plan.Tiles.StandPositionToWorld(plan.GoalTile, 1.2f);
+                var boss = EnemySpawner.Spawn(EnemyDatabase.Boss, pos, bossRoom.transform, 1f, 1f);
+                bossRoom.RegisterEnemy(boss);
+            }
+        }
+
+        private static void SpawnPickups(LayerPlan plan, BuiltLayer built)
+        {
+            foreach (var placement in plan.Pickups)
+            {
+                if (!built.Rooms.TryGetValue(placement.Room, out Room room)) continue;
+                Vector3 pos = plan.Tiles.StandPositionToWorld(placement.Tile, 0.7f);
+                if (placement.Ingredient != null)
                 {
-                    float px = center.x + (float)(rng.NextDouble() * (MapGenerator.RoomWidth - 6) - (MapGenerator.RoomWidth - 6) / 2f);
-                    float py = floorY + 2f + (float)rng.NextDouble() * 3.5f;
-                    TerrainBuilder.CreatePlatform(new Vector3(px, py, 0), 3.5f, roomGO.transform, PlatformColor);
+                    PickupFactory.SpawnIngredientPickup(placement.Ingredient, pos, room.transform);
+                }
+                else if (placement.Bun != null)
+                {
+                    PickupFactory.SpawnBunPickup(placement.Bun, pos, room.transform);
                 }
             }
-
-            PopulateRoomContents(node, room, roomGO.transform, center, floorY, rng, areaDepth);
-
-            return room;
         }
 
-        private static void PopulateRoomContents(RoomNode node, Room room, Transform parent, Vector3 center, float floorY, System.Random rng, int areaDepth)
+        private static void SpawnHazards(LayerPlan plan, BuiltLayer built)
         {
-            // Tuned for a 5-layer descent (areaDepth 0..4) rather than the previous 3.
-            float hpScale = 1f + areaDepth * 0.28f;
-            float dmgScale = 1f + areaDepth * 0.2f;
-
-            switch (node.Type)
+            foreach (var placement in plan.Hazards)
             {
-                case RoomType.Combat:
-                    {
-                        var pool = EnemyDatabase.GetForAreaDepth(areaDepth);
-                        int count = rng.Next(2, 5);
-                        for (int i = 0; i < count; i++)
-                        {
-                            var data = pool[rng.Next(pool.Count)];
-                            Vector3 pos = RandomFloorPosition(center, floorY, rng);
-                            var enemy = EnemySpawner.Spawn(data, pos, parent, hpScale, dmgScale);
-                            room.RegisterEnemy(enemy);
-                        }
-                        break;
-                    }
-                case RoomType.Optional:
-                    {
-                        var pool = EnemyDatabase.GetForAreaDepth(areaDepth);
-                        float eliteHp = node.IsElite ? hpScale * 1.6f : hpScale;
-                        float eliteDmg = node.IsElite ? dmgScale * 1.3f : dmgScale;
-                        int count = node.IsElite ? rng.Next(2, 4) : rng.Next(1, 3);
-                        for (int i = 0; i < count; i++)
-                        {
-                            var data = pool[rng.Next(pool.Count)];
-                            Vector3 pos = RandomFloorPosition(center, floorY, rng);
-                            var enemy = EnemySpawner.Spawn(data, pos, parent, eliteHp, eliteDmg);
-                            room.RegisterEnemy(enemy);
-                        }
+                if (!built.Rooms.TryGetValue(placement.Room, out Room room)) continue;
+                Vector3 pos = plan.Tiles.StandPositionToWorld(placement.Tile, 0.3f);
 
-                        IngredientData ing = IngredientDatabase.GetRandom(rng);
-                        PickupFactory.SpawnIngredientPickup(ing, center + new Vector3(0, 1f, 0), parent);
-                        if (node.IsElite)
-                        {
-                            BunData bun = BunDatabase.GetRandomNonStarter(rng);
-                            PickupFactory.SpawnBunPickup(bun, center + new Vector3(1.5f, 1f, 0), parent);
-                        }
-                        else if (rng.NextDouble() < 0.35)
-                        {
-                            var hazardGO = new GameObject("Hazard");
-                            hazardGO.transform.SetParent(parent, true);
-                            hazardGO.transform.position = center + new Vector3((float)(rng.NextDouble() * 4 - 2), floorY + 0.3f, 0);
-                            var col = hazardGO.AddComponent<BoxCollider2D>();
-                            col.isTrigger = true;
-                            col.size = new Vector2(2.5f, 0.6f);
-                            var hz = hazardGO.AddComponent<HazardZone>();
-                            hz.Configure(6f, 0.7f);
-                            var sr = hazardGO.AddComponent<SpriteRenderer>();
-                            sr.sprite = BunsKun.Game.SpriteFactory.Triangle(new Color(0.9f, 0.2f, 0.2f));
-                            sr.sortingOrder = 2;
-                        }
-                        break;
-                    }
-                case RoomType.Reward:
-                    {
-                        IngredientData ing = IngredientDatabase.GetRandom(rng);
-                        PickupFactory.SpawnIngredientPickup(ing, center + new Vector3(-1.2f, 1f, 0), parent);
-                        if (rng.NextDouble() < 0.4)
-                        {
-                            BunData bun = BunDatabase.GetRandomNonStarter(rng);
-                            PickupFactory.SpawnBunPickup(bun, center + new Vector3(1.2f, 1f, 0), parent);
-                        }
-                        break;
-                    }
-                case RoomType.Boss:
-                    {
-                        Vector3 pos = center + new Vector3(0, 1.5f, 0);
-                        var boss = EnemySpawner.Spawn(EnemyDatabase.Boss, pos, parent, 1f, 1f);
-                        room.RegisterEnemy(boss);
-                        break;
-                    }
-            }
-        }
+                var go = new GameObject("Hazard");
+                go.transform.SetParent(room.transform, true);
+                go.transform.position = pos;
 
-        private static Vector3 RandomFloorPosition(Vector3 center, float floorY, System.Random rng)
-        {
-            float x = center.x + (float)(rng.NextDouble() * (MapGenerator.RoomWidth - 6) - (MapGenerator.RoomWidth - 6) / 2f);
-            return new Vector3(x, floorY + 1.5f, 0f);
-        }
+                var col = go.AddComponent<BoxCollider2D>();
+                col.isTrigger = true;
+                col.size = new Vector2(placement.Width, 0.6f);
 
-        private static void BuildStaircase(Transform parent, Vector3 roomCenter, float floorY, float ceilingY, System.Random rng)
-        {
-            float startY = floorY + 1.6f;
-            float targetY = ceilingY - 1.4f;
-            int steps = Mathf.Max(2, Mathf.CeilToInt((targetY - startY) / 1.5f));
-            float stepHeight = (targetY - startY) / steps;
-            float side = rng.NextDouble() < 0.5 ? -1f : 1f;
-            float curX = roomCenter.x - side * 4f;
+                var hazard = go.AddComponent<HazardZone>();
+                hazard.Configure(6f + plan.Depth * 2f, 0.7f);
 
-            for (int i = 0; i <= steps; i++)
-            {
-                float y = startY + stepHeight * i;
-                float halfRange = MapGenerator.RoomWidth / 2f - 2.5f;
-                float x = Mathf.Clamp(curX, roomCenter.x - halfRange, roomCenter.x + halfRange);
-                TerrainBuilder.CreatePlatform(new Vector3(x, y, 0), 3f, parent, PlatformColor);
-                curX += side * 2.2f;
-                side *= -1f;
-            }
-        }
-
-        private static void BuildHorizontalWallWithGap(Vector3 center, float fullWidth, bool hasGap, Transform parent, Color color, string label)
-        {
-            if (!hasGap)
-            {
-                TerrainBuilder.CreateSolidBlock(center, new Vector2(fullWidth, WallThickness), parent, color, label);
-                return;
-            }
-            float segmentWidth = (fullWidth - GapSize) / 2f;
-            TerrainBuilder.CreateSolidBlock(center + new Vector3(-(GapSize / 2f + segmentWidth / 2f), 0, 0), new Vector2(segmentWidth, WallThickness), parent, color, label + "_L");
-            TerrainBuilder.CreateSolidBlock(center + new Vector3(GapSize / 2f + segmentWidth / 2f, 0, 0), new Vector2(segmentWidth, WallThickness), parent, color, label + "_R");
-        }
-
-        private static void BuildVerticalWallWithGap(Vector3 center, float fullHeight, bool hasGap, Transform parent, Color color, string label)
-        {
-            if (!hasGap)
-            {
-                TerrainBuilder.CreateSolidBlock(center, new Vector2(WallThickness, fullHeight), parent, color, label);
-                return;
-            }
-            // The doorway starts right at floor level so the player can simply walk through
-            // it instead of needing to jump - only the wall above the gap is built.
-            float topSegmentHeight = fullHeight - GapSize;
-            if (topSegmentHeight > 0.1f)
-            {
-                float topSegmentCenterY = center.y + fullHeight / 2f - topSegmentHeight / 2f;
-                TerrainBuilder.CreateSolidBlock(new Vector3(center.x, topSegmentCenterY, center.z), new Vector2(WallThickness, topSegmentHeight), parent, color, label + "_T");
-            }
-        }
-
-        private static void BuildGapAndBarrier(MapGenerator.Edge edge, Vector3 worldOrigin, BuiltArea built)
-        {
-            if (!edge.Parent.RequiresClearLock()) return;
-
-            Vector3 parentCenter = worldOrigin + new Vector3(edge.Parent.GridPos.x * MapGenerator.RoomWidth, edge.Parent.GridPos.y * MapGenerator.RoomHeight, 0f);
-            Vector3 gapCenter = GapWorldPosition(parentCenter, edge.DirFromParent);
-            Vector2 gapSize = (edge.DirFromParent == Direction.Left || edge.DirFromParent == Direction.Right)
-                ? new Vector2(WallThickness * 1.2f, GapSize)
-                : new Vector2(GapSize, WallThickness * 1.2f);
-
-            var parentRoom = built.Rooms[edge.Parent];
-            var barrier = TerrainBuilder.CreateSolidBlock(gapCenter, gapSize, parentRoom.transform, new Color(0.2f, 0.2f, 0.25f, 0.9f), "LockBarrier");
-            parentRoom.AddLockBarrier(barrier);
-        }
-
-        private static Vector3 GapWorldPosition(Vector3 roomCenter, Direction dir)
-        {
-            float halfW = MapGenerator.RoomWidth / 2f;
-            float halfH = MapGenerator.RoomHeight / 2f;
-            // Left/Right doorways sit right at floor level (see BuildVerticalWallWithGap),
-            // not the room's vertical center, so the lock barrier must match that position.
-            float doorwayY = -halfH + GapSize / 2f;
-            switch (dir)
-            {
-                case Direction.Right: return roomCenter + new Vector3(halfW, doorwayY, 0);
-                case Direction.Left: return roomCenter + new Vector3(-halfW, doorwayY, 0);
-                case Direction.Up: return roomCenter + new Vector3(0, halfH, 0);
-                default: return roomCenter + new Vector3(0, -halfH, 0);
+                var sr = go.AddComponent<SpriteRenderer>();
+                sr.sprite = SpriteFactory.Triangle(new Color(0.9f, 0.25f, 0.2f));
+                sr.drawMode = SpriteDrawMode.Sliced;
+                sr.size = new Vector2(placement.Width, 0.6f);
+                sr.sortingOrder = 2;
             }
         }
     }
