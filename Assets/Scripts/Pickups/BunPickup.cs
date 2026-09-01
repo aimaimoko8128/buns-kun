@@ -1,11 +1,11 @@
 using UnityEngine;
 using BunsKun.Combat;
 using BunsKun.Buns;
-using BunsKun.Player;
-using BunsKun.Ingredients;
 
 namespace BunsKun.Pickups
 {
+    /// <summary>Adds the discovered bun to the player's owned buns. Equipping it is a
+    /// deliberate choice made afterwards from the Tab inventory menu.</summary>
     public class BunPickup : MonoBehaviour
     {
         public BunData Data { get; private set; }
@@ -20,16 +20,8 @@ namespace BunsKun.Pickups
             var health = other.GetComponentInParent<Health>();
             if (health == null || health.Team != Team.Player) return;
 
-            var root = health.transform;
-            var stats = root.GetComponent<PlayerStats>();
-            var inventory = root.GetComponent<IngredientInventory>();
-            var combat = root.GetComponent<PlayerCombat>();
-            if (stats != null && inventory != null)
-            {
-                stats.SetBun(Data);
-                inventory.ResizeSlots(Data.ingredientSlotCount);
-                combat?.ClampManaToMax();
-            }
+            var bunInventory = health.GetComponent<BunInventory>();
+            bunInventory?.AddBun(Data);
             Destroy(gameObject);
         }
     }

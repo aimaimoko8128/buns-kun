@@ -63,7 +63,7 @@ namespace BunsKun.ProceduralGeneration
 
             var room = roomGO.AddComponent<Room>();
             bool requiresClear = node.Type == RoomType.Combat || node.Type == RoomType.Boss || node.Type == RoomType.Optional;
-            room.Setup(node, requiresClear);
+            room.Setup(node, requiresClear, center);
 
             // Background panel
             var bg = TerrainBuilder.CreateSolidBlock(center, new Vector2(MapGenerator.RoomWidth, MapGenerator.RoomHeight), roomGO.transform, BackgroundColor, "Background");

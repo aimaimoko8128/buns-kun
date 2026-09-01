@@ -16,6 +16,7 @@ namespace BunsKun.Rooms
         public RoomNode Node { get; private set; }
         public bool RequiresClear { get; private set; }
         public bool Cleared { get; private set; }
+        public Vector3 WorldCenter { get; private set; }
 
         private readonly List<EnemyController> aliveEnemies = new List<EnemyController>();
         private readonly List<GameObject> lockBarriers = new List<GameObject>();
@@ -23,11 +24,12 @@ namespace BunsKun.Rooms
         /// <summary>Raised once, the moment this room's enemies are all defeated (never for rooms that never required clearing).</summary>
         public event Action<Room> OnCombatCleared;
 
-        public void Setup(RoomNode node, bool requiresClear)
+        public void Setup(RoomNode node, bool requiresClear, Vector3 worldCenter)
         {
             Node = node;
             RequiresClear = requiresClear;
             Cleared = !requiresClear;
+            WorldCenter = worldCenter;
         }
 
         public void AddLockBarrier(GameObject barrier)
