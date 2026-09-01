@@ -4,48 +4,58 @@ using BunsKun.Combat;
 namespace BunsKun.Player
 {
     /// <summary>
-    /// Basic 2D platformer movement: left/right walking, a single jump, and a hover
-    /// ("stay airborne") ability triggered by holding the jump key while airborne. Hovering
-    /// drains a limited gauge that only regenerates while grounded, so the descent always
-    /// stays risky rather than turning into free flight.
-    /// Grounded state is checked with a small overlap circle below the player's feet,
-    /// so no special physics layers need to be configured in the project for it to work.
+    /// 2D movement for the hamburger: walking, jumping, and a fuel-limited jetpack that
+    /// actually climbs while the jump key is held (not just a slow fall).
+    ///
+    /// The physics values here are also what the dungeon generator reads to decide how
+    /// far apart it may place ledges - see PlayerMovementProfile. Changing them changes
+    /// the terrain that gets generated, which is intentional.
     /// </summary>
     [RequireComponent(typeof(Rigidbody2D))]
     [RequireComponent(typeof(PlayerStats))]
     [RequireComponent(typeof(Health))]
     public class PlayerController : MonoBehaviour
     {
-        [SerializeField] private float jumpForce = 13f;
+        [Header("Movement")]
+        [SerializeField] private float jumpForce = 15f;
+        [SerializeField] private float gravityScale = 3f;
+        [SerializeField] private float bodyHeight = 1.1f;
         [SerializeField] private float groundCheckRadius = 0.18f;
         [SerializeField] private Vector2 groundCheckOffset = new Vector2(0f, -0.55f);
 
-        [Header("Hover (hold Space in the air)")]
-        [SerializeField] private float maxHoverTime = 1.5f;
-        [SerializeField] private float hoverRegenPerSecond = 0.9f;
-        [SerializeField] private float hoverHoldSpeed = 0.6f;
-        [SerializeField] private float hoverResponsiveness = 25f;
+        [Header("Jetpack (hold Space in the air)")]
+        [SerializeField] private float maxJetpackFuel = 2f;
+        [SerializeField] private float jetpackRiseSpeed = 5f;
+        [SerializeField] private float jetpackAcceleration = 40f;
+        [SerializeField] private float jetpackRefuelPerSecond = 1.2f;
+        [SerializeField] private float jetpackRefuelDelay = 0.15f;
+
+        public float JumpForce => jumpForce;
+        public float GravityScale => gravityScale;
+        public float BodyHeight => bodyHeight;
+        public float JetpackRiseSpeed => jetpackRiseSpeed;
+        public float MaxJetpackFuel => maxJetpackFuel;
 
         private Rigidbody2D rb;
         private PlayerStats stats;
         private Health health;
-        private SpriteRenderer spriteRenderer;
+        private Transform thrustFlame;
         private readonly Collider2D[] overlapResults = new Collider2D[8];
 
-        private float horizontalInput = 0f;
-        private bool holdingHoverKey;
+        private float horizontalInput;
+        private bool holdingJumpKey;
+        private float groundedRefuelTimer;
 
         public bool FacingRight { get; private set; } = true;
         public bool IsGrounded { get; private set; }
-        public bool IsHovering { get; private set; }
-        public float MaxHoverTime => maxHoverTime;
-        public float HoverTimeRemaining { get; private set; }
-        public float HoverFraction => maxHoverTime <= 0f ? 0f : Mathf.Clamp01(HoverTimeRemaining / maxHoverTime);
+        public bool IsThrusting { get; private set; }
+        public float JetpackFuel { get; private set; }
+        public float JetpackFuelFraction => maxJetpackFuel <= 0f ? 0f : Mathf.Clamp01(JetpackFuel / maxJetpackFuel);
 
         private void Awake()
         {
             rb = GetComponent<Rigidbody2D>();
-            rb.gravityScale = 4.5f;
+            rb.gravityScale = gravityScale;
             rb.freezeRotation = true;
             rb.interpolation = RigidbodyInterpolation2D.Interpolate;
             rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
@@ -54,12 +64,29 @@ namespace BunsKun.Player
             health = GetComponent<Health>();
             health.SetTeam(Team.Player);
 
-            spriteRenderer = GetComponentInChildren<SpriteRenderer>();
-            HoverTimeRemaining = maxHoverTime;
+            JetpackFuel = maxJetpackFuel;
+            CreateThrustFlame();
+        }
+
+        private void CreateThrustFlame()
+        {
+            var flame = new GameObject("JetpackFlame");
+            flame.transform.SetParent(transform, false);
+            flame.transform.localPosition = new Vector3(0f, -0.65f, 0f);
+            flame.transform.localScale = new Vector3(0.5f, 0.7f, 1f);
+
+            var sr = flame.AddComponent<SpriteRenderer>();
+            sr.sprite = BunsKun.Game.SpriteFactory.Circle(new Color(1f, 0.65f, 0.15f, 0.9f));
+            sr.sortingOrder = 5;
+
+            thrustFlame = flame.transform;
+            flame.SetActive(false);
         }
 
         private void Update()
         {
+            if (Time.timeScale <= 0f) return;
+
             horizontalInput = 0f;
             if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow)) horizontalInput -= 1f;
             if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)) horizontalInput += 1f;
@@ -67,16 +94,26 @@ namespace BunsKun.Player
             if (horizontalInput > 0.01f) SetFacing(true);
             else if (horizontalInput < -0.01f) SetFacing(false);
 
-            holdingHoverKey = Input.GetKey(KeyCode.Space);
+            holdingJumpKey = Input.GetKey(KeyCode.Space);
 
             if (Input.GetKeyDown(KeyCode.Space) && IsGrounded)
             {
                 rb.linearVelocity = new Vector2(rb.linearVelocity.x, jumpForce);
+                groundedRefuelTimer = 0f;
             }
 
-            if (IsGrounded && HoverTimeRemaining < maxHoverTime)
+            if (IsGrounded && !IsThrusting)
             {
-                HoverTimeRemaining = Mathf.Min(maxHoverTime, HoverTimeRemaining + hoverRegenPerSecond * Time.deltaTime);
+                groundedRefuelTimer += Time.deltaTime;
+                if (groundedRefuelTimer >= jetpackRefuelDelay)
+                {
+                    JetpackFuel = Mathf.Min(maxJetpackFuel, JetpackFuel + jetpackRefuelPerSecond * Time.deltaTime);
+                }
+            }
+
+            if (thrustFlame != null && thrustFlame.gameObject.activeSelf != IsThrusting)
+            {
+                thrustFlame.gameObject.SetActive(IsThrusting);
             }
         }
 
@@ -87,12 +124,15 @@ namespace BunsKun.Player
             float speed = stats != null ? stats.MoveSpeed : 6f;
             rb.linearVelocity = new Vector2(horizontalInput * speed, rb.linearVelocity.y);
 
-            IsHovering = !IsGrounded && holdingHoverKey && HoverTimeRemaining > 0f;
-            if (IsHovering)
+            // Holding the jump key in the air fires the jetpack: it climbs, it does not hover.
+            IsThrusting = holdingJumpKey && !IsGrounded && JetpackFuel > 0f;
+            if (IsThrusting)
             {
-                float newY = Mathf.MoveTowards(rb.linearVelocity.y, hoverHoldSpeed, hoverResponsiveness * Time.fixedDeltaTime);
+                float newY = Mathf.MoveTowards(rb.linearVelocity.y, jetpackRiseSpeed,
+                    jetpackAcceleration * Time.fixedDeltaTime);
                 rb.linearVelocity = new Vector2(rb.linearVelocity.x, newY);
-                HoverTimeRemaining = Mathf.Max(0f, HoverTimeRemaining - Time.fixedDeltaTime);
+                JetpackFuel = Mathf.Max(0f, JetpackFuel - Time.fixedDeltaTime);
+                groundedRefuelTimer = 0f;
             }
         }
 
@@ -108,6 +148,11 @@ namespace BunsKun.Player
                 return true;
             }
             return false;
+        }
+
+        public void RefillJetpack()
+        {
+            JetpackFuel = maxJetpackFuel;
         }
 
         private void SetFacing(bool right)

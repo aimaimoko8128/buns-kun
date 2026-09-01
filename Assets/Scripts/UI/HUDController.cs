@@ -17,7 +17,7 @@ namespace BunsKun.UI
         private RunController runController;
         private Image hpFill;
         private Image manaFill;
-        private Image hoverFill;
+        private Image jetpackFill;
         private Text hpText;
         private Text manaText;
         private Text areaText;
@@ -64,13 +64,13 @@ namespace BunsKun.UI
             manaText = UIFactory.CreateText(manaBack.transform, "ManaText", "100/100", 15, Color.white, TextAnchor.MiddleCenter);
             UIFactory.Stretch(manaText.GetComponent<RectTransform>(), Vector2.zero, Vector2.zero);
 
-            var hoverBack = UIFactory.CreateFilledBar(topLeft, "HoverBar", new Color(0.05f, 0.15f, 0.1f, 0.85f), new Color(0.5f, 0.9f, 0.6f), out hoverFill);
-            var hoverRect = hoverBack.GetComponent<RectTransform>();
-            hoverRect.anchorMin = new Vector2(0, 1);
-            hoverRect.anchorMax = new Vector2(0, 1);
-            hoverRect.pivot = new Vector2(0, 1);
-            hoverRect.anchoredPosition = new Vector2(0, -66);
-            hoverRect.sizeDelta = new Vector2(340, 14);
+            var jetpackBack = UIFactory.CreateFilledBar(topLeft, "JetpackBar", new Color(0.15f, 0.10f, 0.03f, 0.85f), new Color(1f, 0.7f, 0.25f), out jetpackFill);
+            var jetpackRect = jetpackBack.GetComponent<RectTransform>();
+            jetpackRect.anchorMin = new Vector2(0, 1);
+            jetpackRect.anchorMax = new Vector2(0, 1);
+            jetpackRect.pivot = new Vector2(0, 1);
+            jetpackRect.anchoredPosition = new Vector2(0, -66);
+            jetpackRect.sizeDelta = new Vector2(340, 14);
 
             areaText = UIFactory.CreateText(topLeft, "AreaText", "Layer 1 / 5", 20, Color.white);
             var areaRect = areaText.GetComponent<RectTransform>();
@@ -88,7 +88,7 @@ namespace BunsKun.UI
             seedRect.anchoredPosition = new Vector2(0, -116);
             seedRect.sizeDelta = new Vector2(340, 20);
 
-            hintText = UIFactory.CreateText(topLeft, "HintText", "Tab: Inventory", 15, new Color(1, 1, 1, 0.7f));
+            hintText = UIFactory.CreateText(topLeft, "HintText", "Tab: Inventory    F1: Seed", 15, new Color(1, 1, 1, 0.7f));
             var hintRect = hintText.GetComponent<RectTransform>();
             hintRect.anchorMin = new Vector2(0, 1);
             hintRect.anchorMax = new Vector2(0, 1);
@@ -123,7 +123,7 @@ namespace BunsKun.UI
 
         private void UpdateAreaText()
         {
-            areaText.text = "Layer " + (runController.AreaDepth + 1) + " / " + RunController.TotalAreas;
+            areaText.text = "Layer " + (runController.LayerDepth + 1) + " / " + RunController.TotalLayers;
             seedText.text = "Seed: " + runController.RunSeed;
         }
 
@@ -152,7 +152,7 @@ namespace BunsKun.UI
             var playerController = runController.PlayerController;
             if (playerController != null)
             {
-                hoverFill.fillAmount = playerController.HoverFraction;
+                jetpackFill.fillAmount = playerController.JetpackFuelFraction;
             }
 
             if (inventory != null)
